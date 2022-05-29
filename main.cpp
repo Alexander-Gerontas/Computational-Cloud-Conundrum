@@ -77,7 +77,7 @@ public:
     {
         if (!containsDependency(dependency))
             dependencyList.push_back(dependency);
-        else 
+        else
             cout << "dependency already exists in environment" << endl;
     }
 
@@ -104,7 +104,7 @@ public:
         return dependencyList;
     }
 
-    // Ελέγχει αν το Stack υπάρχει στο περιβάλλον 
+    // Ελέγχει αν το Stack υπάρχει στο περιβάλλον
     bool containsDependency(Stack *dependency)
     {
         for (Stack *environDependency : dependencyList)
@@ -124,18 +124,20 @@ public:
         cJSON *env_name = cJSON_CreateObject();
         cJSON_AddItemToArray(env_array, env_name);
 
+        // Προσθήκη του ονόματος του περιβάλλοντος στο json object
         cJSON_AddItemToObject(env_name, "name", cJSON_CreateString(get_environment_name().c_str()));
 
         cJSON *stacks_array = cJSON_CreateArray();
         cJSON_AddItemToObject(env_name, "stacks", stacks_array);
 
+        // Προσθήκη όλων των stack στο json array
         for (Stack *envDependency : dependencyList)
         {
             cJSON_AddItemToArray(stacks_array, cJSON_CreateString(envDependency->get_name().c_str()));
         }
 
         string out = cJSON_Print(root);
-        
+
         // Αφαίρεση κενού και newline
         replace(out.begin(), out.end(), '\n', ' ');
         out.erase(remove_if(out.begin(), out.end(), ::isspace), out.end());
@@ -156,6 +158,7 @@ private:
 public:
     Stacks() {}
 
+    // Προσθήκη νέου stack στο λεξικό
     void add_new_stack(string stack_name, Stack *stack)
     {
         stack_map[stack_name] = stack;
@@ -194,7 +197,7 @@ public:
         cJSON *elem;
         cJSON *environment_name;
         cJSON *dependencies;
-        cJSON *environment;        
+        cJSON *environment;
         cJSON *dependency;
         cJSON *root = cJSON_Parse(line.c_str());
 
@@ -205,17 +208,19 @@ public:
 
         environment_name = cJSON_GetObjectItem(environment, "name");
 
+        // Εύρεση του ονόματος του περιβάλλοντος
         string environ_name = environment_name->valuestring;
-        
+
         dependencies = cJSON_GetObjectItem(environment, "stacks");
 
-        int n2 = cJSON_GetArraySize(dependencies);
+        int total_stacks = cJSON_GetArraySize(dependencies);
 
         list<Stack *> environment_dependencies;
 
         Stack *stack;
 
-        for (int j = 0; j < n2; j++)
+        // Εύρεση των stack στο περιβάλλον και προσθήκη στη λίστα
+        for (int j = 0; j < total_stacks; j++)
         {
             dependency = cJSON_GetArrayItem(dependencies, j);
 
@@ -224,6 +229,7 @@ public:
             environment_dependencies.push_back(stack);
         }
 
+        // Δημιουργία νέου περιβάλλοντος
         return new Environment(environ_name, environment_dependencies);
     }
 
@@ -231,12 +237,17 @@ public:
     bool check_environment_dependencies(Environment *environment, bool print_missing)
     {
         bool dependencies_satisfied = true;
+        Stack *dependency;
 
+        // Εύρεση των dependency του περιβάλλοντος
         for (Stack *stack : environment->get_dependencyList())
         {
             for (string dep_name : stack->get_dependencies())
-            {                
-                Stack *dependency = get_stack_by_name(dep_name);
+            {
+                // Μετατροπή του dependency σε αντικείμενο stack
+                dependency = get_stack_by_name(dep_name);
+
+                // Ελέγχει αν το stack υπάρχει στο περιβάλλον
                 if (!environment->containsDependency(dependency))
                 {
                     dependencies_satisfied = false;
@@ -247,12 +258,12 @@ public:
         }
 
         if (dependencies_satisfied && print_missing)
-            cout << "no dependencies missing" << endl; 
+            cout << "no dependencies missing" << endl;
 
         return dependencies_satisfied;
     }
 
-    // Δέχεται σαν όρισμα ένα αντικείμενο Εnvironment και ταξινομεί τα stacks
+    // Δέχεται σαν όρισμα ένα αντικείμενο Εnvironment και ταξινομεί τα Stacks σε αυτό
     Environment *serialize_dependency_order(Environment *environment)
     {
         list<Stack *> order_list;
@@ -268,7 +279,7 @@ public:
 
             for (Stack *stack : tmp_list)
             {
-                // Προσθηκη του stack στην λιστα αν δεν εχει dep ή αν ολα τα dep υπαρχουν
+                // Προσθήκη του stack στην λίστα αν δεν έχει dependencies ή αν ολα τα dependency υπάρχουν στη λίστα
                 if (stack->get_dependency_number() == 0 || stack->containsDependencies(dep_list))
                 {
                     order_list.push_back(stack);
@@ -279,6 +290,7 @@ public:
             }
         }
 
+        // Επιστροφή νέου αντικειμένου Environment
         return new Environment(environment->get_environment_name(), order_list);
     }
 };
@@ -287,6 +299,7 @@ public:
 Stacks *load_stacks(string filename)
 {
     Stacks *stacks = new Stacks();
+    Stack *stack_object;
 
     cJSON *root = cJSON_Parse(filename.c_str());
     cJSON *elem;
@@ -303,6 +316,7 @@ Stacks *load_stacks(string filename)
         stacks_json_array = cJSON_GetArrayItem(elem, i);
         json_stack_name = cJSON_GetObjectItem(stacks_json_array, "name");
 
+        // Εύρεση του ονόματος του stack
         string stack_name = json_stack_name->valuestring;
 
         dependencies = cJSON_GetObjectItem(stacks_json_array, "dependencies");
@@ -311,15 +325,18 @@ Stacks *load_stacks(string filename)
 
         list<string> dependency_list;
 
+        // Εύρεση των dependency του stack
         for (int j = 0; j < n2; j++)
         {
             dependency = cJSON_GetArrayItem(dependencies, j);
             dependency_list.push_back(dependency->valuestring);
         }
 
-        Stack *obj2 = new Stack(stack_name, dependency_list);
+        // Δημιουργία νέου αντικειμένου stack
+        stack_object = new Stack(stack_name, dependency_list);
 
-        stacks->add_new_stack(stack_name, obj2);
+        // Προσθήκη του stack στην κλάση stacks
+        stacks->add_new_stack(stack_name, stack_object);
     }
 
     return stacks;
@@ -339,7 +356,7 @@ int main()
     getline(infile, filename);
     infile.close();
 
-    // load stacks from json file
+    // Φόρτωση των stack από το αρχείο stacks.txt
     Stacks *stacks = load_stacks(filename);
 
     int input = -1;
@@ -365,7 +382,7 @@ int main()
 
             cout << "enter input filename\n>> ";
 
-            cin >> inputfile;            
+            cin >> inputfile;
             infile.open(inputfile);
 
             if (!infile)
@@ -403,6 +420,7 @@ int main()
         else if (input == 3 && environment)
         {
             stacks->check_environment_dependencies(environment, true);
+            cout << endl;
         }
 
         else if (input == 4 && environment)
@@ -412,6 +430,7 @@ int main()
                 environment = stacks->serialize_dependency_order(environment);
                 cout << "\ndependencies: " << endl;
                 environment->print_dependencyList();
+                cout << endl;
             }
             else
                 cout << "provide all dependencies first" << endl;
@@ -426,6 +445,9 @@ int main()
 
             environment->saveJson(output_filename);
         }
+
+        else if (!environment)
+            cout << "environment not loaded" << endl;
     }
 
     return 0;
