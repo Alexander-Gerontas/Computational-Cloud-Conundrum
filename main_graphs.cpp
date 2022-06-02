@@ -17,6 +17,7 @@ class Stack
 private:
     string name;
     list<Stack *> dependencyList;
+    list<Stack *> dependerList;
 
 public:
     Stack(string name)
@@ -27,6 +28,11 @@ public:
     void add_dependency(Stack *dependency)
     {
         dependencyList.push_back(dependency);
+    }
+
+    void add_depender(Stack *dependency)
+    {
+        dependerList.push_back(dependency);
     }
 
     string get_name()
@@ -42,6 +48,11 @@ public:
     list<Stack *> get_dependencies()
     {
         return dependencyList;
+    }
+
+    list<Stack *> get_dependers()
+    {
+        return dependerList;
     }
 };
 
@@ -101,7 +112,7 @@ class Environment
 private:
     string name;
     list<Stack *> stackList;
-    set<Stack *> missing_stackList;
+    map<string, Stack *> missing_dependencies;
     CustomGraph environment_graph;
 
 public:
@@ -122,21 +133,35 @@ public:
 
             // Προσθήκη ακμών προς τον κόμβο
             for (Stack *dependency : stack->get_dependencies())
-            {                
+            {
                 if (containsStack(dependency))
                 {
                     environment_graph.add_new_edge(dependency->get_name(), stack->get_name());
                 }
 
-                // Σημειώνουμε τα Stack από τα οποία λοίπουν dependency
+                // Σημειώνουμε τα dependency τα οποία λοίπουν σε μία λίστα
                 else
-                {                    
-                    missing_stackList.insert(stack);                    
+                {
+                    missing_dependencies[dependency->get_name()] = dependency;
                 }
+            }
+
+            // Αν το stack είναι dependency που λείπει από ένα stack, προσθέτουμε τις ακμές που λείπουν
+            if (missing_dependencies.contains(stack->get_name()))
+            {
+                // Προσθήκη ακμών προς τον κόμβο
+                for (Stack *dependers : stack->get_dependers())
+                {
+                    if (containsStack(dependers))
+                        environment_graph.add_new_edge(stack->get_name(), dependers->get_name());
+                }
+
+                // Διαγραφή του stack από το map
+                missing_dependencies.erase(stack->get_name());
             }
         }
         else
-            cout << "dependency already exists in environment" << endl;        
+            cout << "dependency already exists in environment" << endl;
     }
 
     // Τύπωση των Stack που περιέχει το περιβάλλον
@@ -162,52 +187,27 @@ public:
         return false;
     }
 
-    void fix_graph_edges()
-    {
-        // Επιστροφή αν όλες οι ακμές υπάρχουν
-        if (missing_stackList.size() == 0)
-            return;
-
-        set<Stack *> missing_stackList_copy(missing_stackList);
-        int graph_edges, dependency_number;
-
-        for (Stack *stack : missing_stackList_copy)
-        {
-            for (Stack *stack_dependency : stack->get_dependencies())
-            {
-                if (containsStack(stack_dependency))
-                    environment_graph.add_new_edge(stack_dependency->get_name(), stack->get_name());
-            }
-
-            // Αριθμός ακμών, αριθμός dependency
-            graph_edges = environment_graph.get_graph_edges(stack->get_name());
-            dependency_number = stack->get_dependency_number();
-
-            // Αν οι ακμές είναι ίσες με τον αριθμό των dependency, έχουν προστεθεί όλες οι ακμές για το stack
-            if (graph_edges == dependency_number)
-                missing_stackList.erase(stack);
-        }
-    }
-
     void print_missing_dependencies()
     {
-        if (missing_stackList.size() == 0)
+        if (missing_dependencies.size() == 0)
         {
             cout << "no dependencies missing" << endl;
             return;
         }
 
-        // Εύρεση των dependency που λείπουν από το περιβάλλον
-        for (Stack *missing_stack : missing_stackList)
-        {
-            int graph_edges = environment_graph.get_graph_edges(missing_stack->get_name());
-            int dependency_number = missing_stack->get_dependency_number();
+        map<string, Stack *>::iterator it;
+        Stack *missing_stack;
 
-            for (Stack *dependency : missing_stack->get_dependencies())
+        // Εύρεση των dependency που λείπουν από το περιβάλλον
+        for (it = missing_dependencies.begin(); it != missing_dependencies.end(); it++)
+        {
+            missing_stack = it->second;
+
+            for (Stack *depender : missing_stack->get_dependers())
             {
-                if (!containsStack(dependency))
+                if (containsStack(depender))
                 {
-                    cout << missing_stack->get_name() << " dependency " << dependency->get_name() << " missing" << endl;
+                    cout << depender->get_name() << " dependency " << missing_stack->get_name() << " missing" << endl;
                 }
             }
         }
@@ -216,8 +216,7 @@ public:
     // Ελέγχει αν όλα τα dependency υπάρχουν στο περιβάλλον
     bool dependencies_satisfied()
     {
-        fix_graph_edges();
-        if (missing_stackList.size() == 0)
+        if (missing_dependencies.size() == 0)
             return true;
 
         return false;
@@ -276,10 +275,17 @@ private:
 public:
     Stacks() {}
 
-    // Προσθήκη νέου stack στο λεξικό
-    void add_new_stack(string stack_name, Stack *stack)
+    Stack *get_or_create_new_stack(string stack_name)
     {
-        stack_map[stack_name] = stack;
+        // Αν το stack έχει δημιουργηθεί το επιστρέφουμε από το map
+        if (contains(stack_name))
+            return stack_map[stack_name];
+
+        // Αλλιώς δημιουργούμε νέο stack και το επιστρέφουμε
+        Stack *stack_object = new Stack(stack_name);
+        stack_map[stack_name] = stack_object;
+
+        return stack_object;
     }
 
     bool contains(string stack_name)
@@ -351,14 +357,11 @@ public:
         for (int j = 0; j < total_stacks; j++)
         {
             dependency = cJSON_GetArrayItem(stack_dependencies, j);
-            
-            stack = stack_map[dependency->valuestring];            
+
+            stack = stack_map[dependency->valuestring];
 
             environment->add_stack(stack);
         }
-
-        // Ελέγχει αν λοίπουν ακμές από τον γράφο και τις προσθέτει
-        environment->fix_graph_edges();
 
         // Διαγραφή δεικτών cJSON
         delete root, json_stacks, json_environment_name, stack_dependencies, json_environment, dependency;
@@ -374,14 +377,14 @@ Stacks *load_stacks(string filename)
     Stacks *stacks = new Stacks();
     Stack *stack_object;
     Stack *stack_dependency;
-        
+
     cJSON *root = cJSON_Parse(filename.c_str());
     cJSON *stack_objects;
     cJSON *stack_object_json;
     cJSON *stack_name_json;
     cJSON *dependencies;
     cJSON *dependency;
-    
+
     stack_objects = cJSON_GetArrayItem(root, 0);
     int stack_num = cJSON_GetArraySize(stack_objects);
 
@@ -397,32 +400,21 @@ Stacks *load_stacks(string filename)
         int dependency_num = cJSON_GetArraySize(dependencies);
 
         // Δημιουργία νέου αντικειμένου stack
-        if (!stacks->contains(stack_name))
-            stack_object = new Stack(stack_name);
-
-        else 
-            stack_object = stacks->get_stack_by_name(stack_name);
+        stack_object = stacks->get_or_create_new_stack(stack_name);
 
         // Εύρεση των dependency του stack
         for (int j = 0; j < dependency_num; j++)
         {
             dependency = cJSON_GetArrayItem(dependencies, j);
 
-            if (stacks->contains(dependency->valuestring))
-                stack_dependency = stacks->get_stack_by_name(dependency->valuestring);
+            stack_dependency = stacks->get_or_create_new_stack(dependency->valuestring);
 
-            // Αν το dependency δεν υπάρχει το δημιουργούμε επιτόπου
-            else
-            {
-                stack_dependency = new Stack(dependency->valuestring);
-                stacks->add_new_stack(dependency->valuestring, stack_dependency);
-            }
-
+            // Προσθήκη dependency στο stack
             stack_object->add_dependency(stack_dependency);
-        }
 
-        // Προσθήκη του stack στην κλάση stacks
-        stacks->add_new_stack(stack_name, stack_object);
+            // Προσθήκη stack στους dependers
+            stack_dependency->add_depender(stack_object);
+        }
     }
 
     // Διαγραφή δεικτών cJSON
@@ -469,12 +461,12 @@ int main()
         }
 
         else if (input == 1)
-        {            
-            string inputfile = "env1.txt"; // remove
-            
+        {
+            string inputfile;
+
             cout << "enter input filename\n>> ";
 
-            // cin >> inputfile; // open
+            cin >> inputfile;
 
             infile.open(inputfile);
 
@@ -499,13 +491,15 @@ int main()
             int selection = -1;
             stacks->print_map_stacks();
 
+            // Ο χρήστης επιλέγει ένα dependency
             cout << "select a dependency\n>> ";
             cin >> selection;
 
+            // Εύρεση του dependency από το hashmap
             Stack *dep = stacks->get_stack_by_index(selection);
 
+            // Προσθήκη του dependency στο περιβάλλον
             environment->add_stack(dep);
-            environment->fix_graph_edges();
 
             cout << "\ndependencies: " << endl;
             environment->print_dependencyList();
